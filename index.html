@@ -212,8 +212,14 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     </section>
 
     <!-- 02 -->
+    <section class="section" id="s-pot">
+      <div class="sh"><span class="n">02</span><h3>Potentiel à bâtir</h3><span class="right">Multiplicateur légal selon la zone</span></div>
+      <div class="sb" id="potentiel"></div>
+    </section>
+
+    <!-- 03 -->
     <section class="section" id="s2">
-      <div class="sh"><span class="n">02</span><h3>Vue de la parcelle</h3><span class="right">Orthophoto swisstopo · cadastre officiel</span></div>
+      <div class="sh"><span class="n">03</span><h3>Vue de la parcelle</h3><span class="right">Orthophoto swisstopo · cadastre officiel</span></div>
       <div id="map"></div>
       <div class="maptools">
         <div class="seg" id="bg">
@@ -228,9 +234,9 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
       </div>
     </section>
 
-    <!-- 03 -->
+    <!-- 04 -->
     <section class="section" id="s3">
-      <div class="sh"><span class="n">03</span><h3>Propriétaires</h3></div>
+      <div class="sh"><span class="n">04</span><h3>Propriétaires</h3></div>
       <div class="sb" id="owners"></div>
     </section>
 
@@ -488,7 +494,7 @@ async function loadParcel(noComm, noParc, fromAddress, otherEgrids){
   renderPdcom(P);
   drawMap(feat);
 
-  ["addr", "zones", "bati", "voisins"].forEach(id => $(id).innerHTML = '<div class="pending">Interrogation des registres…</div>');
+  ["addr", "zones", "bati", "voisins", "potentiel"].forEach(id => $(id).innerHTML = '<div class="pending">Interrogation des registres…</div>');
   setStatus("");
 
   const geomEsri = toEsri(feat.geometry);
@@ -498,11 +504,13 @@ async function loadParcel(noComm, noParc, fromAddress, otherEgrids){
 
   const tasks = [
     loadAddresses(P, geomEsri, fromAddress, otherEgrids).catch(e => fail("addr", e)),
-    loadZones(feat, toEsri(inner.geometry)).catch(e => fail("zones", e)),
-    loadBati(P, toEsri(inner.geometry)).catch(e => fail("bati", e)),
+    loadZones(feat, toEsri(inner.geometry)).catch(e => { fail("zones", e); return null; }),
+    loadBati(P, toEsri(inner.geometry)).catch(e => { fail("bati", e); return null; }),
     loadVoisins(P, toEsri(outer.geometry)).catch(e => fail("voisins", e))
   ];
-  await Promise.all(tasks);
+  const [, zonesRows, bati] = await Promise.all(tasks);
+  if (run !== currentRun) return;
+  try { renderPotentiel(P, zonesRows, bati); } catch(e){ fail("potentiel", e); }
   if (run === currentRun) $("results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function fail(id, e){ $(id).innerHTML = `<div class="note warn">Donnée indisponible (${esc(e.message)}). Voir le journal technique.</div>`; }
@@ -577,10 +585,11 @@ async function loadZones(parcelFeat, innerEsri){
   }
   const dens = ok.find(r => r.ov.key === "dens");
   const z5 = zp.some(r => /^5/.test(String(r.a.ABRV_ZONE || "")) || /zone 5/i.test(r.a.NOM_ZONE || ""));
-  if (z5 && !dens) html += `<div class="note">Parcelle en zone 5 hors des secteurs exclus des dérogations de l'art. 59 al. 4 LCI (couche SITG « programmes de densification »). L'indice applicable dépend de la stratégie du PDCom — calcul du multiplicateur prévu dans une prochaine version.</div>`;
+  if (z5 && !dens) html += `<div class="note">Parcelle en zone 5, hors des secteurs exclus des dérogations de l'art. 59 al. 4 LCI (couche SITG « programmes de densification »). Voir le potentiel à bâtir en section 02.</div>`;
   if (errs.length) html += `<div class="note warn">Couches non disponibles : ${errs.map(e => esc(e.ov.titre)).join(", ")}.</div>`;
   html += `<div class="note">Les parts sont calculées par intersection géométrique (précision indicative). Seul l'extrait RDPPF officiel fait foi.</div>`;
   $("zones").innerHTML = html;
+  return { ok, errs };
 }
 
 /* ---------- PDCom ---------- */
@@ -597,7 +606,7 @@ function renderPdcom(P){
     html += `<div class="fact wide"><div class="label">Commune</div><div class="v small">${esc(nom)} — absente de la base PDCom locale</div></div><div class="fact"><div class="label">Statut</div><div class="v small">À renseigner</div></div>`;
   }
   html += `</div><div class="links" style="margin-top:14px">${d && d[3] ? aLink(d[3], "Document PDCom") : ""}${aLink(PDCOM_PORTAIL, "Portail PDCom ge.ch", "btn ghost")}</div>`;
-  html += `<div class="note">Multiplicateur PDCom : non calculé dans la version 1 (à traiter à l'étape suivante).</div>`;
+  html += `<div class="note">Le multiplicateur applicable à la parcelle est calculé en section 02 « Potentiel à bâtir ».</div>`;
   $("pdcom").innerHTML = html;
 }
 
@@ -606,7 +615,7 @@ async function loadBati(P, innerEsri){
   if (!P.egrid){ $("bati").innerHTML = '<div class="empty">EGRID absent — impossible de rattacher les bâtiments.</div>'; return; }
   const j = await query(L_BATIMENT, { where: `egrid_liste LIKE '%${P.egrid}%'`, outFields: "egid,no_batiment,nombat,destination,nomen_classe,epoque_construction,annee_construction,niveaux_horsol,niveaux_ssol,hauteur,surface,egrid_liste", returnGeometry: "false", orderByFields: "surface DESC" }, "Bâtiments hors-sol");
   const b = (j.features || []).map(f => f.attributes);
-  if (!b.length){ $("bati").innerHTML = '<div class="empty">Aucun bâtiment hors-sol recensé sur la parcelle.</div>'; return; }
+  if (!b.length){ $("bati").innerHTML = '<div class="empty">Aucun bâtiment hors-sol recensé sur la parcelle.</div>'; return { count: 0, sbp: 0, nivMissing: false, aCheval: 0 }; }
   const emprise = b.reduce((s, x) => s + (x.surface || 0), 0);
   const sbpBrute = b.reduce((s, x) => s + (x.surface || 0) * (x.niveaux_horsol || 0), 0);
   const nivMissing = b.some(x => !x.niveaux_horsol);
@@ -624,6 +633,128 @@ async function loadBati(P, innerEsri){
   if (P.surface && sbpBrute) html += `<div class="note">Indicateur brut : emprise × niveaux hors-sol ≈ ${fmtM2(sbpBrute)}, soit un rapport ≈ ${(sbpBrute / P.surface).toFixed(2)} à la surface de la parcelle. Estimation non réglementaire (ce n'est pas l'IUS légal)${nivMissing ? " — niveaux manquants pour certains bâtiments" : ""}.</div>`;
   if (aCheval) html += `<div class="note warn">${aCheval} bâtiment(s) à cheval sur plusieurs parcelles : l'emprise indiquée est celle du bâtiment entier.</div>`;
   $("bati").innerHTML = html;
+  return { count: b.length, sbp: sbpBrute, nivMissing, aCheval };
+}
+
+/* ============================================================
+   POTENTIEL À BÂTIR — « multiplicateur » légal
+   Sources (texte en vigueur vérifié le 23.09.2026, silgeneve.ch) :
+   - LCI (L 5 05) art. 59 al. 1, 4, 4bis : zone 5
+   - LGZD (L 1 35) art. 2A al. 2 : indices de densité minimaux en zone de développement
+   ============================================================ */
+const REGLES = {
+  zone5: {
+    base: [
+      { id: "b",  nom: "Standard",                    taux: 0.25,  ref: "LCI 59 al. 1" },
+      { id: "bh", nom: "Standard HPE",                taux: 0.275, ref: "LCI 59 al. 1" },
+      { id: "bt", nom: "Standard THPE",               taux: 0.30,  ref: "LCI 59 al. 1" }
+    ],
+    derogA: [
+      { id: "a",  nom: "Dérogation — ordre contigu / habitat groupé",        taux: 0.44, ref: "LCI 59 al. 4 let. a" },
+      { id: "at", nom: "Dérogation THPE — ordre contigu / habitat groupé",   taux: 0.48, ref: "LCI 59 al. 4 let. a" }
+    ],
+    derogB: [
+      { id: "c",  nom: "Dérogation exceptionnelle (> 5 000 m²)",             taux: 0.55, ref: "LCI 59 al. 4 let. b" },
+      { id: "ct", nom: "Dérogation exceptionnelle THPE (> 5 000 m²)",        taux: 0.60, ref: "LCI 59 al. 4 let. b" }
+    ],
+    seuilB: 5000
+  },
+  /* indice de densité MINIMAL (et non maximal) en zone de développement */
+  zd: { D2: 2.5, D3: 1.8, D4A: 1.0, D4B: 0.8 }
+};
+
+function renderPotentiel(P, zonesRes, bati){
+  const box = $("potentiel");
+  if (!zonesRes){ box.innerHTML = '<div class="note warn">Affectation indisponible : potentiel non calculable.</div>'; return; }
+  const S = Number(P.surface) || 0;
+  const ok = zonesRes.ok || [];
+  const zp = ok.filter(r => r.ov.key === "zp");
+  const zd = ok.filter(r => r.ov.key === "zd");
+  const plq = ok.filter(r => r.ov.key === "plq");
+  const densRows = ok.filter(r => r.ov.key === "dens");
+  const exclu = densRows.find(r => /pas de d[ée]rogation/i.test(r.a.TYPE || ""));
+  const modif = densRows.find(r => /modification/i.test(r.a.TYPE || ""));
+  const existant = bati && bati.sbp ? bati.sbp : 0;
+  const code = r => String(r.a.ABRV_ZONE || "").trim().toUpperCase();
+  const part = r => (r.share == null ? 1 : Math.min(1, r.share));
+
+  let html = "";
+  const blocs = [];
+
+  /* ---- Zone 5 ---- */
+  const z5 = zp.filter(r => code(r) === "5");
+  if (z5.length){
+    const s5 = S * z5.reduce((t, r) => t + part(r), 0);
+    const lignes = [];
+    REGLES.zone5.base.forEach(x => lignes.push({ ...x, statut: "Droit", cls: "" }));
+    if (exclu){
+      [...REGLES.zone5.derogA, ...REGLES.zone5.derogB].forEach(x => lignes.push({ ...x, statut: "Exclu (secteur SITG)", cls: "off" }));
+    } else {
+      REGLES.zone5.derogA.forEach(x => lignes.push({ ...x, statut: "Dérogation possible", cls: "" }));
+      const grand = S > REGLES.zone5.seuilB;
+      REGLES.zone5.derogB.forEach(x => lignes.push({ ...x, statut: grand ? "Possible (surface > 5 000 m²)" : "Seulement par regroupement de parcelles", cls: grand ? "" : "cond" }));
+    }
+    const dispo = lignes.filter(l => l.cls !== "off");
+    const min = s5 * REGLES.zone5.base[0].taux;
+    const maxL = dispo.filter(l => l.cls === "").slice(-1)[0];
+    const max = s5 * maxL.taux;
+
+    html += `<div class="facts" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="fact"><div class="label">Surface prise en compte</div><div class="v num">${fmtM2(s5)}</div><div class="muted" style="font-size:12px">Zone 5${z5.some(r => part(r) < 0.995) ? " · " + fmtPct(z5.reduce((t, r) => t + part(r), 0)) + " de la parcelle" : ""}</div></div>
+      <div class="fact"><div class="label">SBP de droit (25 %)</div><div class="v num">${fmtM2(min)}</div></div>
+      <div class="fact"><div class="label">SBP maximale atteignable</div><div class="v num">${fmtM2(max)}</div><div class="muted" style="font-size:12px">${esc(maxL.nom)} · ${Math.round(maxL.taux * 1000) / 10} %</div></div>
+    </div>`;
+
+    html += `<div class="table-scroll" style="margin-top:16px"><table><thead><tr><th>Scénario</th><th class="r">Indice</th><th class="r">SBP max.</th>${existant ? '<th class="r">Solde / existant</th>' : ""}<th>Statut</th><th>Base légale</th></tr></thead><tbody>` +
+      lignes.map(l => {
+        const sbp = s5 * l.taux, solde = sbp - existant;
+        const st = l.cls === "off" ? "color:var(--ink-3);text-decoration:line-through" : "";
+        return `<tr><td style="${st}">${esc(l.nom)}</td><td class="r num" style="${st}">${l.taux.toLocaleString("fr-CH", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td><td class="r num" style="${st}">${fmtM2(sbp)}</td>${existant ? `<td class="r num" style="${st}">${solde > 0 ? "+ " + fmtM2(solde) : "—"}</td>` : ""}<td><span class="tag ${l.cls === "cond" ? "dep" : ""}">${esc(l.statut)}</span></td><td class="muted" style="font-size:12px;white-space:nowrap">${esc(l.ref)}</td></tr>`;
+      }).join("") + `</tbody></table></div>`;
+
+    if (exclu) html += `<div class="note warn">Secteur « ${esc(exclu.a.NOM || "")} » : pas de dérogation selon l'art. 59 al. 4 LCI. Seuls les taux de l'alinéa 1 s'appliquent. ${inlineLink(exclu.a.PRATIQUE_ADMINISTRATIVE, "Pratique administrative")}</div>`;
+    else html += `<div class="note">Les dérogations de l'al. 4 s'appliquent dans les périmètres de densification accrue du PDCom approuvé, ou, si la commune n'en a pas défini, au titre de l'al. 4bis. Elles restent à l'appréciation du département (préavis commune et commission d'architecture) et supposent un projet en ordre contigu ou en habitat groupé.</div>`;
+    if (modif) html += `<div class="note warn">Modification de zone en cours sur ce secteur (« ${esc(modif.a.NOM || "")} ») : les règles peuvent changer.</div>`;
+    if (existant) html += `<div class="note">Le solde déduit la surface déjà bâtie estimée (emprise × niveaux hors-sol ≈ ${fmtM2(existant)}). ${bati.aCheval ? "Un bâtiment est à cheval sur plusieurs parcelles, ce qui surestime cette valeur. " : ""}${bati.nivMissing ? "Niveaux manquants pour certains bâtiments. " : ""}</div>`;
+    blocs.push("z5");
+  }
+
+  /* ---- Zones de développement ---- */
+  zd.forEach(r => {
+    const c = code(r), id = REGLES.zd[c], s = S * part(r);
+    html += `<div class="sub-h" style="margin-top:${blocs.length ? 30 : 0}px"><span class="label">${esc(r.a.NOM_ZONE || c)}</span></div>`;
+    if (id){
+      html += `<div class="facts" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <div class="fact"><div class="label">Surface concernée</div><div class="v num">${fmtM2(s)}</div></div>
+        <div class="fact"><div class="label">Indice de densité minimal</div><div class="v num">${id.toLocaleString("fr-CH", { minimumFractionDigits: 1 })}</div><div class="muted" style="font-size:12px">LGZD art. 2A al. 2</div></div>
+        <div class="fact"><div class="label">SBP minimale indicative</div><div class="v num">${fmtM2(s * id)}</div></div></div>`;
+      html += `<div class="note">En zone de développement, la loi fixe une densité <strong>minimale</strong>. Elle se calcule sur la surface nette (hors dessertes et équipements publics), donc la SBP réelle sur la seule parcelle sera un peu inférieure. Les droits effectifs sont fixés par un PLQ. Zone préexistante : ${esc(r.a.ZONE_PREEX || "—")}${String(r.a.ZONE_PREEX || "").trim() === "5" && !plq.length ? " — sans PLQ, un projet se réfère en principe aux normes de la zone 5 ci-dessus." : "."}</div>`;
+    } else {
+      html += `<div class="note">Pas d'indice de densité fixé par la loi pour cette zone de développement. Les droits à bâtir résultent du PLQ.</div>`;
+    }
+    blocs.push("zd");
+  });
+
+  /* ---- PLQ ---- */
+  if (plq.length){
+    html += `<div class="note warn">${plq.length > 1 ? "Des PLQ sont" : "Un PLQ est"} en vigueur sur la parcelle (${plq.map(r => "n° " + esc(r.a.NO_PLAN)).join(", ")}). Il fixe les droits à bâtir et prévaut sur les indices ci-dessus. ${plq.map(r => inlineLink(r.a.LIEN_PLAN, "Plan " + r.a.NO_PLAN) + (r.a.LIEN_REGLEMENT ? " · " + inlineLink(r.a.LIEN_REGLEMENT, "Règlement") : "")).join(" · ")}</div>`;
+  }
+
+  /* ---- Autres zones ---- */
+  const autres = zp.filter(r => code(r) !== "5");
+  autres.forEach(r => {
+    const c = code(r);
+    const constructible = ["1", "2", "3", "4A", "4B", "4BP", "H"].includes(c);
+    html += `<div class="sub-h" style="margin-top:${blocs.length ? 30 : 0}px"><span class="label">${esc(r.a.NOM_ZONE || c)}${part(r) < 0.995 ? " · " + fmtPct(part(r)) : ""}</span></div>`;
+    html += constructible
+      ? `<div class="note">Pas d'indice d'utilisation du sol dans cette zone. Les droits à bâtir découlent du gabarit (hauteur et distances, LCI art. 19 à 32${c === "H" ? ", et du plan de site des hameaux" : ""}). Un potentiel chiffré ne peut pas être calculé automatiquement de manière fiable.</div>`
+      : `<div class="note">Zone non destinée à l'habitation ordinaire : aucun potentiel résidentiel calculé.</div>`;
+    blocs.push("autre");
+  });
+
+  if (!zp.length && !zd.length) html += `<div class="note warn">Aucune zone trouvée : potentiel non calculable.</div>`;
+  html += `<div class="note" style="margin-top:20px">SBP = surface brute de plancher hors sol. Les chiffres appliquent la loi à la surface du registre foncier. Ce sont des plafonds théoriques, qui ne tiennent pas compte des distances, des gabarits, de la pleine terre (LCI 59 al. 3bis) ni des servitudes.</div>`;
+  box.innerHTML = html;
 }
 
 /* ---------- Voisins / dépendances ---------- */
