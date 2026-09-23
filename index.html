@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walther — Recherche parcellaire</title>
+<meta name="description" content="Recherche parcellaire, canton de Genève — v1">
+<link rel="icon" href="logo-walther.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<style>
+:root{
+  --ink:#16181a; --ink-2:#4a4d52; --ink-3:#8a8d92;
+  --paper:#f7f6f3; --card:#ffffff; --line:#e3e0da; --line-2:#cfcbc3;
+  --accent:#16181a; --warn:#8a5a14; --warn-bg:#faf3e6; --ok:#2f5d3a;
+  --focus:#16181a;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:"Jost",system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:400;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-underline-offset:3px;text-decoration-thickness:1px}
+a:hover{color:var(--ink-2)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.label{font-size:11px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.num{font-variant-numeric:tabular-nums}
+
+/* Header */
+header{border-bottom:1px solid var(--line);background:var(--card)}
+header .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:22px;padding-bottom:22px}
+.brand{display:flex;align-items:center;gap:22px}
+.brand img{height:54px;width:auto;display:block}
+.brand .sep{width:1px;height:38px;background:var(--line-2)}
+.brand h1{margin:0;font-size:13px;font-weight:500;letter-spacing:.24em;text-transform:uppercase}
+.brand .sub{font-size:12px;color:var(--ink-3);letter-spacing:.06em;margin-top:2px}
+.version{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--line-2);border-radius:999px;padding:4px 12px;white-space:nowrap}
+
+/* Search */
+.hero{position:relative;overflow:hidden;padding:56px 0 40px}
+.hero::before,.hero::after{content:"";position:absolute;border:1px solid var(--line-2);border-radius:50%;pointer-events:none}
+.hero::before{width:520px;height:520px;right:-160px;top:-260px}
+.hero::after{width:300px;height:300px;right:40px;top:-110px;border-color:var(--line)}
+.hero h2{margin:8px 0 22px;font-weight:300;font-size:34px;letter-spacing:.01em;line-height:1.2;max-width:640px}
+.search{position:relative;display:flex;gap:0;max-width:760px;background:var(--card);border:1px solid var(--ink);}
+.search input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:17px;padding:16px 18px;color:var(--ink);outline:none}
+.search input::placeholder{color:var(--ink-3)}
+.search button{border:0;background:var(--ink);color:#fff;font:inherit;font-size:12px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;padding:0 28px;cursor:pointer}
+.search button:disabled{opacity:.55;cursor:progress}
+.search:focus-within{box-shadow:0 0 0 3px rgba(22,24,26,.08)}
+.hints{margin-top:12px;font-size:13px;color:var(--ink-3);max-width:760px}
+.hints code{font-family:inherit;color:var(--ink-2);background:var(--card);border:1px solid var(--line);padding:1px 7px;border-radius:3px;cursor:pointer}
+
+/* Status & choices */
+.status{max-width:760px;margin-top:18px;font-size:14px;color:var(--ink-2);min-height:1em}
+.status.err{color:#8b2c1f}
+.choices{max-width:760px;margin-top:14px;background:var(--card);border:1px solid var(--line)}
+.choices .head{padding:12px 18px;border-bottom:1px solid var(--line)}
+.choices button{display:flex;justify-content:space-between;gap:16px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:13px 18px;font:inherit;color:var(--ink);cursor:pointer}
+.choices button:last-child{border-bottom:0}
+.choices button:hover{background:var(--paper)}
+.choices .meta{color:var(--ink-3);font-size:13px;white-space:nowrap}
+
+/* Sections */
+main{padding-bottom:64px}
+.section{margin-top:28px;background:var(--card);border:1px solid var(--line)}
+.section > .sh{display:flex;align-items:baseline;gap:18px;padding:22px 28px;border-bottom:1px solid var(--line)}
+.section > .sh .n{font-size:12px;letter-spacing:.2em;color:var(--ink-3);font-weight:500}
+.section > .sh h3{margin:0;font-size:13px;font-weight:500;letter-spacing:.22em;text-transform:uppercase}
+.section > .sh .right{margin-left:auto;font-size:12px;color:var(--ink-3)}
+.sb{padding:24px 28px}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.fact{padding:14px 16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0}
+.fact .v{font-size:19px;font-weight:400;margin-top:4px;overflow-wrap:anywhere}
+.fact .v.small{font-size:15px}
+.fact.wide{grid-column:span 2}
+.sub-h{margin:30px 0 12px;display:flex;align-items:center;gap:14px}
+.sub-h::after{content:"";flex:1;height:1px;background:var(--line)}
+.sub-h:first-child{margin-top:0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-2)}
+td{padding:10px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.r,th.r{text-align:right}
+tr.clk{cursor:pointer}
+tr.clk:hover td{background:var(--paper)}
+.tag{display:inline-block;font-size:11px;letter-spacing:.08em;border:1px solid var(--line-2);border-radius:3px;padding:1px 7px;color:var(--ink-2);white-space:nowrap}
+.tag.dep{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
+.muted{color:var(--ink-3)}
+.note{font-size:13px;color:var(--ink-2);background:var(--paper);border-left:2px solid var(--line-2);padding:10px 14px;margin-top:12px}
+.note.warn{border-left-color:var(--warn);background:var(--warn-bg);color:#5d3d0c}
+.links{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ink);padding:9px 16px;font-size:12px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:var(--ink);background:var(--card)}
+.btn:hover{background:var(--ink);color:#fff}
+.btn.ghost{border-color:var(--line-2);color:var(--ink-2)}
+.empty{color:var(--ink-3);font-size:14px}
+.pending{color:var(--ink-3);font-size:14px}
+.pending::before{content:"";display:inline-block;width:10px;height:10px;border:1px solid var(--ink-3);border-top-color:transparent;border-radius:50%;margin-right:8px;vertical-align:-1px;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Map */
+#map{height:520px;background:#e9e7e2}
+.maptools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 28px;border-top:1px solid var(--line)}
+.seg{display:inline-flex;border:1px solid var(--line-2)}
+.seg button{border:0;background:var(--card);font:inherit;font-size:12px;letter-spacing:.12em;text-transform:uppercase;padding:8px 14px;cursor:pointer;color:var(--ink-2)}
+.seg button.on{background:var(--ink);color:#fff}
+.leaflet-container{font-family:inherit}
+
+/* Log */
+details.log{margin-top:28px;font-size:13px;color:var(--ink-2)}
+details.log summary{cursor:pointer;letter-spacing:.14em;text-transform:uppercase;font-size:11px;color:var(--ink-3)}
+details.log ol{margin:10px 0 0;padding-left:20px}
+details.log li{margin:2px 0;overflow-wrap:anywhere}
+details.log .ko{color:#8b2c1f}
+
+footer{border-top:1px solid var(--line);padding:22px 0 40px;font-size:12px;color:var(--ink-3)}
+footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
+
+.small{font-size:13px}
+.hidden{display:none!important}
+
+@media (max-width:860px){
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fact.wide{grid-column:span 2}
+}
+@media (max-width:560px){
+  .wrap{padding:0 16px}
+  .brand img{height:40px}
+  .brand .sep,.brand .txt .sub{display:none}
+  .hero{padding:36px 0 28px}
+  .hero h2{font-size:26px}
+  .search{flex-direction:column}
+  .search button{padding:14px}
+  .section > .sh,.sb{padding-left:16px;padding-right:16px}
+  .maptools{padding:12px 16px}
+  #map{height:380px}
+  .table-scroll{overflow-x:auto}
+  .table-scroll table{min-width:560px}
+  .section > .sh .right{display:none}
+}
+@media print{
+  header .version,.hero::before,.hero::after,.search,.hints,details.log,.maptools{display:none}
+  body{background:#fff}
+  .section{break-inside:avoid;border-color:#ccc}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <img src="logo-walther.png" alt="Walther">
+      <div class="sep"></div>
+      <div class="txt">
+        <h1>Recherche parcellaire</h1>
+        <div class="sub">Canton de Genève</div>
+      </div>
+    </div>
+    <span class="version">Version 1</span>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div class="label">Point d'entrée unique</div>
+      <h2>Une adresse ou un numéro de parcelle.</h2>
+      <form class="search" id="form" autocomplete="off">
+        <input id="q" type="text" placeholder="Adresse ou numéro de parcelle" aria-label="Adresse ou numéro de parcelle" autofocus>
+        <button id="go" type="submit">Rechercher</button>
+      </form>
+      <div class="hints">
+        Exemples :
+        <code data-q="Rue de Lausanne 45">Rue de Lausanne 45</code>
+        <code data-q="7503">7503</code>
+        <code data-q="Plan-les-Ouates 7503">Plan-les-Ouates 7503</code>
+        <code data-q="21:7503">21:7503</code>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <div class="choices hidden" id="choices"></div>
+    </div>
+  </section>
+
+  <div class="wrap hidden" id="results">
+
+    <!-- 01 -->
+    <section class="section" id="s1">
+      <div class="sh"><span class="n">01</span><h3>Informations cadastrales</h3><span class="right" id="s1-right"></span></div>
+      <div class="sb">
+        <div class="facts" id="facts"></div>
+
+        <div class="sub-h"><span class="label">Adresse(s) sur la parcelle</span></div>
+        <div id="addr"></div>
+
+        <div class="sub-h"><span class="label">Affectation et plans en vigueur</span></div>
+        <div id="zones"></div>
+
+        <div class="sub-h"><span class="label">Plan directeur communal (PDCom)</span></div>
+        <div id="pdcom"></div>
+
+        <div class="sub-h"><span class="label">Bâti existant</span></div>
+        <div id="bati"></div>
+
+        <div class="sub-h"><span class="label">Parcelles contiguës et dépendances</span></div>
+        <div id="voisins"></div>
+
+        <div class="sub-h"><span class="label">Documents officiels</span></div>
+        <div class="links" id="docs"></div>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section class="section" id="s2">
+      <div class="sh"><span class="n">02</span><h3>Vue de la parcelle</h3><span class="right">Orthophoto swisstopo · cadastre officiel</span></div>
+      <div id="map"></div>
+      <div class="maptools">
+        <div class="seg" id="bg">
+          <button type="button" data-bg="ortho" class="on">Orthophoto</button>
+          <button type="button" data-bg="plan">Plan</button>
+        </div>
+        <div class="seg" id="cadtoggle">
+          <button type="button" data-cad="1" class="on">Cadastre visible</button>
+          <button type="button" data-cad="0">Masqué</button>
+        </div>
+        <span style="margin-left:auto" class="links" id="maplinks"></span>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section class="section" id="s3">
+      <div class="sh"><span class="n">03</span><h3>Propriétaires</h3></div>
+      <div class="sb" id="owners"></div>
+    </section>
+
+    <details class="log" id="logbox">
+      <summary>Journal technique des requêtes</summary>
+      <ol id="log"></ol>
+    </details>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Sources : SITG (État de Genève) · Cadastre RDPPF Genève · geo.admin.ch (swisstopo)</span>
+    <span id="stamp"></span>
+  </div>
+</footer>
+
+<script>
+"use strict";
+/* ============================================================
+   CONFIGURATION — sources vérifiées le 23.09.2026
+   ============================================================ */
+const SITG = "https://vector.sitg.ge.ch/arcgis/rest/services/";
+const L_PARCELLE = SITG + "Hosted/CAD_PARCELLE_MENSU/FeatureServer/0";
+const L_ADRESSE  = SITG + "Hosted/CAD_ADRESSE/FeatureServer/0";
+const L_BATIMENT = SITG + "Hosted/CAD_BATIMENT_HORSOL/FeatureServer/0";
+const L_DDP      = SITG + "Hosted/CAD_DDP/FeatureServer/0";
+const GEOADMIN_SEARCH = "https://api3.geo.admin.ch/rest/services/api/SearchServer";
+const GE_BBOX_2056 = "2480000,1105000,2515000,1140000";
+
+/* Couches d'affectation / plans (RDPPF sur SITG). Ordre = ordre d'affichage. */
+const OVERLAYS = [
+  { key:"zp",   url:SITG+"RDPPF_ZONES_PRIM/FeatureServer/0", titre:"Zone d'affectation",
+    fmt:a => ({ main: a.NOM_ZONE || a.ABRV_ZONE, det: [a.DSOPB && ("DS OPB " + a.DSOPB), a.NO_PLAN && ("plan n° " + a.NO_PLAN), a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_LOI || a.LIEN_PLAN }) },
+  { key:"zd",   url:SITG+"RDPPF_ZONES_DEV/FeatureServer/0", titre:"Zone de développement",
+    fmt:a => ({ main: a.NOM_ZONE || a.ABRV_ZONE, det: [a.ZONE_PREEX && ("zone préexistante : " + a.ZONE_PREEX), a.NO_LOI && ("loi " + a.NO_LOI), a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_LOI || a.LIEN_PLAN }) },
+  { key:"plq",  url:SITG+"RDPPF_PLQ/FeatureServer/0", titre:"Plan localisé de quartier (PLQ)",
+    fmt:a => ({ main: "PLQ n° " + a.NO_PLAN + (a.INDICE && a.INDICE !== "-" ? " " + a.INDICE : "") + (a.LIEU ? " — " + a.LIEU : ""), det: [fmtDate(a.DATE_ADOP_CE) && ("adopté le " + fmtDate(a.DATE_ADOP_CE)), a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_PLAN, link2: a.LIEN_REGLEMENT }) },
+  { key:"pus",  url:SITG+"RDPPF_PUS/FeatureServer/0", titre:"Plan d'utilisation du sol (PUS)",
+    fmt:a => ({ main: "PUS n° " + a.NO_PLAN + (a.LIEU ? " — " + a.LIEU : ""), det: [fmtDate(a.DATE_ADOP_CE) && ("adopté le " + fmtDate(a.DATE_ADOP_CE)), a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_PLAN, link2: a.LIEN_REGLEMENT }) },
+  { key:"ps",   url:SITG+"RDPPF_PS/FeatureServer/0", titre:"Plan de site",
+    fmt:a => ({ main: a.TITRE_DU_PLAN || ("Plan n° " + a.NO_PLAN), det: [a.TYPE_DE_PLAN, fmtDate(a.DATE_ADOPTION) && ("adopté le " + fmtDate(a.DATE_ADOPTION)), a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_PLAN, link2: a.LIEN_REGLEMENT }) },
+  { key:"zprot",url:SITG+"RDPPF_ZP/FeatureServer/0", titre:"Zone protégée",
+    fmt:a => ({ main: a.TITRE_DU_PLAN || ("Plan n° " + a.NO_PLAN), det: [a.TYPE_DE_PLAN, a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_PLAN }) },
+  { key:"zr",   url:SITG+"RDPPF_ZR/FeatureServer/0", titre:"Zone réservée",
+    fmt:a => ({ main: "Zone réservée n° " + a.NO_PLAN + (a.LIEU ? " — " + a.LIEU : ""), det: [a.ZONE_CONC && ("zone concernée : " + a.ZONE_CONC), fmtDate(a.DATE_FIN_VALID) && ("valable jusqu'au " + fmtDate(a.DATE_FIN_VALID)), a.STATUT_JUR].filter(Boolean).join(" · "), link: a.LIEN_PLAN }) },
+  { key:"dens", url:SITG+"SIT_PROG_DENS/FeatureServer/0", titre:"Secteur zone villas — densification",
+    fmt:a => ({ main: (a.NOM ? a.NOM + " — " : "") + (a.TYPE || ""), det: "Pratique administrative art. 59 al. 4 LCI", link: a.PRATIQUE_ADMINISTRATIVE }) }
+];
+
+/* Communes cadastrales (n° SITG) — 45 communes, Genève en 4 sections */
+const COMMUNES = {1:"Aire-la-Ville",2:"Anières",3:"Avully",4:"Avusy",5:"Bardonnex",6:"Bellevue",7:"Bernex",8:"Carouge",9:"Cartigny",10:"Céligny",11:"Chancy",12:"Chêne-Bougeries",13:"Chêne-Bourg",14:"Choulex",15:"Collex-Bossy",16:"Collonge-Bellerive",17:"Cologny",18:"Confignon",19:"Corsier",20:"Dardagny",21:"Genève-Cité",22:"Genève-Eaux-Vives",23:"Genève-Petit-Saconnex",24:"Genève-Plainpalais",25:"Genthod",26:"Grand-Saconnex",27:"Gy",28:"Hermance",29:"Jussy",30:"Laconnex",31:"Lancy",32:"Meinier",33:"Meyrin",34:"Onex",35:"Perly-Certoux",36:"Plan-les-Ouates",37:"Pregny-Chambésy",38:"Presinge",39:"Puplinge",40:"Russin",41:"Satigny",42:"Soral",43:"Thônex",44:"Troinex",45:"Vandoeuvres",46:"Vernier",47:"Versoix",48:"Veyrier"};
+
+/* PDCom — extrait du fichier PDCOM_Geneve_data.json (23.09.2026), limité aux communes genevoises réelles.
+   [génération, statut, date d'adoption, lien]. Données NON vérifiées une à une. */
+const PDCOM = {"Aire-la-Ville":["2e","Adopté","2024","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-aire-ville-mis-jour"],"Anières":["2e","Adopté","2025-10-29","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-anieres-2e-generation"],"Avully":["2e","En élaboration","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-avully"],"Avusy":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-avusy-2e-generation"],"Bardonnex":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-bardonnex-2e-generation"],"Bellevue":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-bellevue-2e-generation-mis-jour"],"Bernex":["2e","Adopté","2026-03-04","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-bernex"],"Carouge":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-carouge-2e-generation"],"Cartigny":["1ère","À vérifier","",""],"Céligny":["1ère","À vérifier","",""],"Chancy":["1ère","Valide","2010","https://ge.ch/geodata/SIAMEN/PDL/PDCom_Chancy/PDCom_Chancy02.pdf"],"Choulex":["1ère","À vérifier","",""],"Chêne-Bougeries":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-chene-bougeries-2e-generation-mis-jour"],"Chêne-Bourg":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-chene-bourg-2e-generation-mis-jour"],"Collex-Bossy":["1ère","Valide","","https://www.ge.ch/document/plan-directeur-communal-collex-bossy"],"Collonge-Bellerive":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-collonge-bellerive-2e-generation"],"Cologny":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-cologny-2e-generation"],"Confignon":["1ère","Valide","",""],"Corsier":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-corsier-2e-generation"],"Dardagny":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-dardagny"],"Genève":["2e","Adopté (Genève 2040)","2025","https://www.ge.ch/document/plan-directeur-communal-geneve-2e-generation"],"Gy":["1ère","À vérifier","",""],"Hermance":["1ère","Valide","",""],"Jussy":["1ère","Valide","","https://www.ge.ch/document/plan-directeur-communal-jussy"],"Lancy":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-lancy-2e-generation"],"Meinier":["1ère","Valide","","https://www.meinier.ch/environnement-developpement/amenagement/plan-directeur-communal"],"Meyrin":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-meyrin-2e-generation"],"Onex":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-onex-2e-generation-mis-jour"],"Perly-Certoux":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-perly-certoux-2e-generation"],"Plan-les-Ouates":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-ouates-2e-generation"],"Pregny-Chambésy":["2e","En élaboration","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-pregny-chambesy"],"Presinge":["1ère","Valide","",""],"Puplinge":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-puplinge-2e-generation"],"Russin":["1ère","À vérifier","",""],"Satigny":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-mis-jour-plan-directeur-chemins-pietons-satigny-2e-generation"],"Thônex":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-thonex-2e-generation"],"Troinex":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-troinex-2e-generation"],"Vandoeuvres":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-chemins-pietons-vandoeuvres-2e-generation-mis-jour"],"Vernier":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-vernier-2e-generation"],"Veyrier":["2e","Adopté","","https://www.ge.ch/document/plan-directeur-communal-plan-directeur-chemins-pietons-veyrier-2e-generation"]};
+const PDCOM_PORTAIL = "https://www.ge.ch/dossier/amenager-territoire/planification-communale/plans-directeurs-communaux-2e-generation";
+
+/* ============================================================
+   UTILITAIRES
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/œ/gi, "oe").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const fmtInt = n => (n == null || isNaN(n)) ? "—" : Math.round(n).toLocaleString("fr-CH");
+const fmtM2 = n => (n == null || isNaN(n)) ? "—" : fmtInt(n) + " m²";
+const fmtPct = r => (r == null || isNaN(r)) ? "" : (r >= 0.995 ? "100 %" : (r * 100).toFixed(r < 0.1 ? 1 : 0) + " %");
+function fmtDate(v){
+  if (v == null || v === "") return "";
+  if (typeof v === "number") { const d = new Date(v); return isNaN(d) ? "" : d.toLocaleDateString("fr-CH"); }
+  const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleDateString("fr-CH");
+}
+const linkIcon = '<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 3 9" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+const aLink = (href, txt, cls="btn") => href ? `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener">${esc(txt)} ${linkIcon}</a>` : "";
+const inlineLink = (href, txt) => href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(txt)}</a>` : "";
+
+function log(msg, ok = true){
+  const li = document.createElement("li");
+  li.textContent = new Date().toLocaleTimeString("fr-CH") + " — " + msg;
+  if (!ok) li.className = "ko";
+  $("log").appendChild(li);
+}
+function setStatus(msg, err = false){ const s = $("status"); s.textContent = msg || ""; s.classList.toggle("err", !!err); }
+
+async function getJSON(url, label){
+  const t0 = performance.now();
+  try{
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (j && j.error) throw new Error(j.error.message || "erreur service");
+    log(`${label} · ${Math.round(performance.now() - t0)} ms`);
+    return j;
+  }catch(e){ log(`${label} · ÉCHEC : ${e.message}`, false); throw e; }
+}
+/* Requête ArcGIS en POST (géométries longues), requête « simple » → pas de pré-vol CORS */
+async function query(layerUrl, params, label){
+  const t0 = performance.now();
+  const body = new URLSearchParams(Object.assign({ f: "json" }, params));
+  try{
+    const r = await fetch(layerUrl + "/query", { method: "POST", body });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (j && j.error) throw new Error(j.error.message || "erreur service");
+    log(`${label} · ${Math.round(performance.now() - t0)} ms · ${(j.features || []).length} objet(s)`);
+    return j;
+  }catch(e){ log(`${label} · ÉCHEC : ${e.message}`, false); throw e; }
+}
+/* GeoJSON (4326) → géométrie Esri JSON pour les requêtes spatiales */
+function toEsri(geom){
+  if (!geom) return null;
+  const rings = geom.type === "Polygon" ? geom.coordinates : geom.type === "MultiPolygon" ? geom.coordinates.flat() : null;
+  return rings ? JSON.stringify({ rings, spatialReference: { wkid: 4326 } }) : null;
+}
+
+/* ============================================================
+   ÉTAT
+   ============================================================ */
+let busy = false, map, parcelLayer, cadLayer, bgOrtho, bgPlan;
+let currentRun = 0;
+
+/* ============================================================
+   1. INTERPRÉTATION DE LA SAISIE
+   ============================================================ */
+const COMMUNE_INDEX = (() => {
+  const idx = {};
+  for (const [no, nom] of Object.entries(COMMUNES)) idx[norm(nom)] = [Number(no)];
+  idx["geneve"] = [21, 22, 23, 24];
+  idx["ville de geneve"] = [21, 22, 23, 24];
+  idx["cite"] = [21]; idx["eaux vives"] = [22]; idx["petit saconnex"] = [23]; idx["plainpalais"] = [24];
+  idx["vandoeuvres"] = [45]; idx["celigny"] = [10]; idx["pregny"] = [37]; idx["chambesy"] = [37];
+  return idx;
+})();
+
+function parseInput(raw){
+  const s = raw.trim().replace(/\s+/g, " ");
+  if (!s) return null;
+  let m;
+  if ((m = s.match(/^(\d{1,2})\s*:\s*(\d{1,6})$/))) return { kind: "parcel", communes: [Number(m[1])], no: Number(m[2]) };
+  if ((m = s.match(/^(?:parcelle|parc\.?|p\.?)?\s*n?[°o]?\s*(\d{1,6})$/i))) return { kind: "parcel", communes: null, no: Number(m[1]) };
+  if ((m = s.match(/^(.+?)[\s,:;\-\/]+(?:parcelle|parc\.?|n[°o]\.?)?\s*(\d{1,6})$/i))) {
+    const c = COMMUNE_INDEX[norm(m[1])];
+    if (c) return { kind: "parcel", communes: c, no: Number(m[2]) };
+  }
+  if ((m = s.match(/^(?:parcelle|parc\.?)\s*n?[°o]?\s*(\d{1,6})\s+(?:a|à|de|,)?\s*(.+)$/i))) {
+    const c = COMMUNE_INDEX[norm(m[2])];
+    if (c) return { kind: "parcel", communes: c, no: Number(m[1]) };
+  }
+  return { kind: "address", text: s };
+}
+
+/* ============================================================
+   2. RÉSOLUTION → une parcelle
+   ============================================================ */
+async function onSearch(raw){
+  if (busy) return;
+  const p = parseInput(raw);
+  if (!p) return;
+  hideChoices();
+  busy = true; $("go").disabled = true;
+  try{
+    if (p.kind === "parcel") await resolveParcelNumber(p);
+    else await resolveAddress(p.text);
+  }catch(e){
+    setStatus("La recherche a échoué : " + e.message + ". Consultez le journal technique.", true);
+  }finally{ busy = false; $("go").disabled = false; }
+}
+
+async function resolveParcelNumber(p){
+  setStatus("Recherche de la parcelle n° " + p.no + "…");
+  let where = "no_parcelle=" + p.no;
+  if (p.communes) where += " AND no_comm IN (" + p.communes.join(",") + ")";
+  const j = await query(L_PARCELLE, { where, outFields: "commune,no_comm,no_parcelle,surface,type_propri,validite", returnGeometry: "false", orderByFields: "no_comm" }, "Parcelle par numéro");
+  const feats = (j.features || []).map(f => f.attributes);
+  if (!feats.length){ setStatus("Aucune parcelle n° " + p.no + (p.communes ? " dans cette commune." : " dans le canton."), true); return; }
+  if (feats.length === 1){ setStatus(""); return loadParcel(feats[0].no_comm, feats[0].no_parcelle); }
+  setStatus("");
+  showChoices(`Le n° ${p.no} existe dans ${feats.length} communes — les numéros de parcelle sont propres à chaque commune. Précisez :`,
+    feats.map(a => ({ main: `${a.commune} — parcelle ${a.no_parcelle}`, meta: `${fmtM2(a.surface)} · ${a.type_propri || ""}`, go: () => loadParcel(a.no_comm, a.no_parcelle) })));
+}
+
+async function resolveAddress(text){
+  setStatus("Recherche de l'adresse…");
+  const url = `${GEOADMIN_SEARCH}?searchText=${encodeURIComponent(text)}&type=locations&origins=address&sr=2056&limit=20&bbox=${GE_BBOX_2056}`;
+  const j = await getJSON(url, "Géocodage adresse (geo.admin.ch)");
+  const res = (j.results || []).map(r => r.attrs).filter(a => / ge$/.test(a.detail || ""));
+  if (!res.length){ setStatus("Adresse introuvable dans le canton de Genève. Vérifiez l'orthographe ou saisissez un numéro de parcelle.", true); return; }
+  const clean = a => (a.label || "").replace(/<[^>]+>/g, "");
+  /* Tous les mots saisis doivent figurer dans l'adresse candidate (« 45 » ≠ « 45a ») */
+  const qTok = norm(text).split(" ").filter(t => t && !["ge", "ch", "geneve"].includes(t) || /^\d/.test(t));
+  const exact = res.filter(a => { const d = new Set(norm(a.detail + " " + clean(a)).split(" ")); return qTok.every(t => d.has(t)); });
+  if (res.length === 1 || exact.length === 1){
+    const a = exact.length === 1 ? exact[0] : res[0];
+    setStatus("");
+    return loadParcelAtPoint(a.y, a.x, clean(a), egidOf(a));
+  }
+  setStatus("");
+  showChoices("Plusieurs adresses correspondent. Précisez :",
+    res.slice(0, 12).map(a => ({ main: clean(a), meta: "", go: () => loadParcelAtPoint(a.y, a.x, clean(a), egidOf(a)) })));
+}
+
+/* featureId geo.admin = « EGID_EDID » (registre fédéral des bâtiments) */
+const egidOf = a => { const m = String(a.featureId || "").match(/^(\d+)_/); return m ? m[1] : null; };
+
+async function loadParcelAtPoint(E, N, label, egid){
+  hideChoices();
+  setStatus("Identification de la parcelle à l'adresse « " + label + " »…");
+  /* Voie principale : adresse → bâtiment (EGID) → parcelle du centroïde du bâtiment.
+     Le point d'adresse est souvent sur la façade côté rue, donc parfois sur le domaine public. */
+  if (egid){
+    try{
+      const b = await query(L_BATIMENT, { where: "egid=" + Number(egid), outFields: "egid,egrid_centroide,egrid_liste", returnGeometry: "false" }, "Bâtiment de l'adresse (EGID " + egid + ")");
+      const bat = (b.features || [])[0]?.attributes;
+      const eg = bat && (bat.egrid_centroide || (bat.egrid_liste || "").split(/[;,\s]+/)[0]);
+      if (eg){
+        const pj = await query(L_PARCELLE, { where: `egrid='${eg.replace(/[^A-Z0-9]/gi, "")}'`, outFields: "no_comm,no_parcelle", returnGeometry: "false" }, "Parcelle du bâtiment");
+        const pa = (pj.features || [])[0]?.attributes;
+        if (pa){
+          const others = (bat.egrid_liste || "").split(/[;,\s]+/).filter(x => x && x !== eg);
+          setStatus("");
+          return loadParcel(pa.no_comm, pa.no_parcelle, label, others);
+        }
+      }
+    }catch(e){ /* repli sur la recherche par point */ }
+  }
+  const j = await query(L_PARCELLE, { geometry: `${E},${N}`, geometryType: "esriGeometryPoint", inSR: "2056", spatialRel: "esriSpatialRelIntersects", outFields: "commune,no_comm,no_parcelle,type_propri", returnGeometry: "false" }, "Parcelle à l'adresse");
+  const feats = (j.features || []).map(f => f.attributes);
+  if (!feats.length){ setStatus("Aucune parcelle trouvée sous cette adresse.", true); return; }
+  feats.sort((a, b) => (/^DP|chemin/.test(a.type_propri) ? 1 : 0) - (/^DP|chemin/.test(b.type_propri) ? 1 : 0));
+  setStatus("");
+  return loadParcel(feats[0].no_comm, feats[0].no_parcelle, label);
+}
+
+/* ============================================================
+   3. CHARGEMENT COMPLET D'UNE PARCELLE
+   ============================================================ */
+async function loadParcel(noComm, noParc, fromAddress, otherEgrids){
+  const run = ++currentRun;
+  hideChoices();
+  $("log").innerHTML = "";
+  setStatus(`Chargement de la parcelle ${noParc} (${COMMUNES[noComm] || "commune " + noComm})…`);
+  const fc = await query(L_PARCELLE, { where: `no_comm=${noComm} AND no_parcelle=${noParc}`, outFields: "*", returnGeometry: "true", outSR: "4326", f: "geojson" }, "Géométrie et attributs de la parcelle");
+  if (run !== currentRun) return;
+  const feat = (fc.features || [])[0];
+  if (!feat){ setStatus("Parcelle introuvable.", true); return; }
+  const P = feat.properties;
+  $("results").classList.remove("hidden");
+  $("q").value = `${P.commune} ${P.no_parcelle}`;
+  history.replaceState(null, "", "#" + P.no_comm + ":" + P.no_parcelle);
+  $("stamp").textContent = "Recherche du " + new Date().toLocaleString("fr-CH");
+
+  renderFacts(P, feat);
+  renderDocs(P, feat);
+  renderOwners(P);
+  renderPdcom(P);
+  drawMap(feat);
+
+  ["addr", "zones", "bati", "voisins"].forEach(id => $(id).innerHTML = '<div class="pending">Interrogation des registres…</div>');
+  setStatus("");
+
+  const geomEsri = toEsri(feat.geometry);
+  let inner = feat, outer = feat;
+  try { const b = turf.buffer(feat, -0.5, { units: "meters" }); if (b && b.geometry && turf.area(b) > 1) inner = b; } catch(e){}
+  try { const b = turf.buffer(feat, 0.5, { units: "meters" }); if (b && b.geometry) outer = b; } catch(e){}
+
+  const tasks = [
+    loadAddresses(P, geomEsri, fromAddress, otherEgrids).catch(e => fail("addr", e)),
+    loadZones(feat, toEsri(inner.geometry)).catch(e => fail("zones", e)),
+    loadBati(P, toEsri(inner.geometry)).catch(e => fail("bati", e)),
+    loadVoisins(P, toEsri(outer.geometry)).catch(e => fail("voisins", e))
+  ];
+  await Promise.all(tasks);
+  if (run === currentRun) $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function fail(id, e){ $(id).innerHTML = `<div class="note warn">Donnée indisponible (${esc(e.message)}). Voir le journal technique.</div>`; }
+
+/* ---------- Faits principaux ---------- */
+function renderFacts(P, feat){
+  const surfGeom = turf.area(feat);
+  const rows = [
+    ["N° de parcelle", `<span class="num">${esc(P.no_parcelle)}</span>`],
+    ["Commune", esc(P.commune) + ` <span class="muted small">(n° ${esc(P.no_comm)})</span>`],
+    ["Surface (registre)", `<span class="num">${fmtM2(P.surface)}</span>`],
+    ["Type de propriété", esc(P.type_propri || "—")],
+    ["EGRID", `<span class="num">${esc(P.egrid || "—")}</span>`, "small"],
+    ["Identifiant", `<span class="num">${esc(P.ideddp || "—")}</span>`, "small"],
+    ["Validité", esc(P.validite || "—"), "small"],
+    ["Dernière mise à jour", esc(fmtDate(P.datedt) || "—"), "small"]
+  ];
+  $("facts").innerHTML = rows.map(([k, v, c]) => `<div class="fact"><div class="label">${k}</div><div class="v ${c || ""}">${v}</div></div>`).join("");
+  $("s1-right").textContent = `Surface géométrique ≈ ${fmtM2(surfGeom)}`;
+}
+
+/* ---------- Adresses ---------- */
+async function loadAddresses(P, geomEsri, fromAddress, otherEgrids){
+  /* Adresses = points situés dans la parcelle + adresses des bâtiments rattachés à la parcelle */
+  const [j, jb] = await Promise.all([
+    query(L_ADRESSE, { geometry: geomEsri, geometryType: "esriGeometryPolygon", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "adresse,no_postal,nom_npa,egid", returnGeometry: "false", orderByFields: "adresse" }, "Adresses dans la parcelle"),
+    P.egrid ? query(L_BATIMENT, { where: `egrid_liste LIKE '%${P.egrid}%'`, outFields: "egid", returnGeometry: "false" }, "EGID des bâtiments de la parcelle") : Promise.resolve({ features: [] })
+  ]);
+  const egids = [...new Set((jb.features || []).map(f => f.attributes.egid).filter(Boolean))];
+  let jb2 = { features: [] };
+  if (egids.length) jb2 = await query(L_ADRESSE, { where: "egid IN (" + egids.slice(0, 200).join(",") + ")", outFields: "adresse,no_postal,nom_npa,egid", returnGeometry: "false" }, "Adresses des bâtiments");
+  const seen = new Set();
+  const list = [...(j.features || []), ...(jb2.features || [])].map(f => f.attributes)
+    .filter(a => { const k = a.adresse + a.no_postal; if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => String(a.adresse).localeCompare(String(b.adresse), "fr", { numeric: true }));
+  const straddle = (otherEgrids && otherEgrids.length) ? `<div class="note warn">Le bâtiment de l'adresse « ${esc(fromAddress)} » s'étend aussi sur ${otherEgrids.length} autre(s) parcelle(s) (EGRID ${otherEgrids.map(esc).join(", ")}). La parcelle affichée est celle qui porte le centre du bâtiment.</div>` : "";
+  if (!list.length){
+    $("addr").innerHTML = `<div class="empty">Aucune adresse postale sur cette parcelle.</div>` + straddle;
+    return;
+  }
+  $("addr").innerHTML = straddle + `<div class="table-scroll"><table><thead><tr><th>Adresse</th><th>NPA / localité</th><th class="r">EGID bâtiment</th></tr></thead><tbody>` +
+    list.map(a => `<tr><td>${esc(a.adresse)}</td><td>${esc(a.no_postal || "")} ${esc(a.nom_npa || "")}</td><td class="r num">${esc(a.egid || "—")}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+}
+
+/* ---------- Affectation ---------- */
+async function loadZones(parcelFeat, innerEsri){
+  const parcelArea = turf.area(parcelFeat);
+  const results = await Promise.all(OVERLAYS.map(async ov => {
+    try{
+      const j = await query(ov.url, { geometry: innerEsri, geometryType: "esriGeometryPolygon", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "*", returnGeometry: "true", outSR: "4326", maxAllowableOffset: "0.000004", f: "geojson" }, ov.titre);
+      return (j.features || []).map(f => {
+        let share = null;
+        try { const x = turf.intersect(parcelFeat, f); share = x ? turf.area(x) / parcelArea : 0; } catch(e){}
+        return { ov, a: f.properties, share };
+      }).filter(r => r.share == null || r.share > 0.005);
+    }catch(e){ return [{ ov, error: e.message }]; }
+  }));
+  const rows = results.flat();
+  const errs = rows.filter(r => r.error);
+  const ok = rows.filter(r => !r.error);
+  const zp = ok.filter(r => r.ov.key === "zp");
+  let html = "";
+  if (!zp.length) html += `<div class="note warn">Aucune zone d'affectation primaire trouvée — vérifier sur l'extrait RDPPF.</div>`;
+  if (ok.length){
+    html += `<div class="table-scroll"><table><thead><tr><th style="width:26%">Thème</th><th>Objet</th><th class="r" style="width:12%">Part</th><th style="width:16%"></th></tr></thead><tbody>`;
+    for (const r of ok){
+      const f = r.ov.fmt(r.a);
+      html += `<tr><td class="muted">${esc(r.ov.titre)}</td><td><div>${esc(f.main || "—")}</div>${f.det ? `<div class="muted" style="font-size:13px">${esc(f.det)}</div>` : ""}</td><td class="r num">${fmtPct(r.share)}</td><td>${inlineLink(f.link, "Document")}${f.link2 ? " · " + inlineLink(f.link2, "Règlement") : ""}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+  const dens = ok.find(r => r.ov.key === "dens");
+  const z5 = zp.some(r => /^5/.test(String(r.a.ABRV_ZONE || "")) || /zone 5/i.test(r.a.NOM_ZONE || ""));
+  if (z5 && !dens) html += `<div class="note">Parcelle en zone 5 hors des secteurs exclus des dérogations de l'art. 59 al. 4 LCI (couche SITG « programmes de densification »). L'indice applicable dépend de la stratégie du PDCom — calcul du multiplicateur prévu dans une prochaine version.</div>`;
+  if (errs.length) html += `<div class="note warn">Couches non disponibles : ${errs.map(e => esc(e.ov.titre)).join(", ")}.</div>`;
+  html += `<div class="note">Les parts sont calculées par intersection géométrique (précision indicative). Seul l'extrait RDPPF officiel fait foi.</div>`;
+  $("zones").innerHTML = html;
+}
+
+/* ---------- PDCom ---------- */
+function renderPdcom(P){
+  const nom = /^Genève-/.test(P.commune) ? "Genève" : P.commune;
+  const key = Object.keys(PDCOM).find(k => norm(k) === norm(nom));
+  const d = key ? PDCOM[key] : null;
+  let html = `<div class="facts" style="grid-template-columns:repeat(3,minmax(0,1fr))">`;
+  if (d){
+    html += `<div class="fact"><div class="label">Commune</div><div class="v small">${esc(nom)}</div></div>`;
+    html += `<div class="fact"><div class="label">Génération</div><div class="v small">${esc(d[0])}${d[2] ? ` · ${esc(d[2])}` : ""}</div></div>`;
+    html += `<div class="fact"><div class="label">Statut</div><div class="v small">${esc(d[1])}</div></div>`;
+  } else {
+    html += `<div class="fact wide"><div class="label">Commune</div><div class="v small">${esc(nom)} — absente de la base PDCom locale</div></div><div class="fact"><div class="label">Statut</div><div class="v small">À renseigner</div></div>`;
+  }
+  html += `</div><div class="links" style="margin-top:14px">${d && d[3] ? aLink(d[3], "Document PDCom") : ""}${aLink(PDCOM_PORTAIL, "Portail PDCom ge.ch", "btn ghost")}</div>`;
+  html += `<div class="note">Multiplicateur PDCom : non calculé dans la version 1 (à traiter à l'étape suivante).</div>`;
+  $("pdcom").innerHTML = html;
+}
+
+/* ---------- Bâti ---------- */
+async function loadBati(P, innerEsri){
+  if (!P.egrid){ $("bati").innerHTML = '<div class="empty">EGRID absent — impossible de rattacher les bâtiments.</div>'; return; }
+  const j = await query(L_BATIMENT, { where: `egrid_liste LIKE '%${P.egrid}%'`, outFields: "egid,no_batiment,nombat,destination,nomen_classe,epoque_construction,annee_construction,niveaux_horsol,niveaux_ssol,hauteur,surface,egrid_liste", returnGeometry: "false", orderByFields: "surface DESC" }, "Bâtiments hors-sol");
+  const b = (j.features || []).map(f => f.attributes);
+  if (!b.length){ $("bati").innerHTML = '<div class="empty">Aucun bâtiment hors-sol recensé sur la parcelle.</div>'; return; }
+  const emprise = b.reduce((s, x) => s + (x.surface || 0), 0);
+  const sbpBrute = b.reduce((s, x) => s + (x.surface || 0) * (x.niveaux_horsol || 0), 0);
+  const nivMissing = b.some(x => !x.niveaux_horsol);
+  const hMax = Math.max(...b.map(x => x.hauteur || 0));
+  const aCheval = b.filter(x => (x.egrid_liste || "").split(/[;,\s]+/).filter(Boolean).length > 1).length;
+  let html = `<div class="facts">
+    <div class="fact"><div class="label">Bâtiments</div><div class="v num">${b.length}</div></div>
+    <div class="fact"><div class="label">Emprise au sol</div><div class="v num">${fmtM2(emprise)}</div></div>
+    <div class="fact"><div class="label">Taux d'emprise</div><div class="v num">${P.surface ? fmtPct(emprise / P.surface) : "—"}</div></div>
+    <div class="fact"><div class="label">Hauteur max.</div><div class="v num">${hMax ? hMax.toFixed(1) + " m" : "—"}</div></div>
+  </div>`;
+  html += `<div class="table-scroll" style="margin-top:16px"><table><thead><tr><th>Bâtiment</th><th>Destination</th><th class="r">Emprise</th><th class="r">Niveaux</th><th class="r">Hauteur</th><th class="r">Construction</th></tr></thead><tbody>` +
+    b.map(x => `<tr><td>${esc(x.nombat || x.no_batiment || "—")}<div class="muted" style="font-size:12px">EGID ${esc(x.egid || "—")}</div></td><td>${esc(x.destination || x.nomen_classe || "—")}</td><td class="r num">${fmtM2(x.surface)}</td><td class="r num">${x.niveaux_horsol ?? "—"}${x.niveaux_ssol ? ` + ${x.niveaux_ssol} ss` : ""}</td><td class="r num">${x.hauteur ? x.hauteur.toFixed(1) + " m" : "—"}</td><td class="r num">${esc(x.annee_construction || x.epoque_construction || "—")}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+  if (P.surface && sbpBrute) html += `<div class="note">Indicateur brut : emprise × niveaux hors-sol ≈ ${fmtM2(sbpBrute)}, soit un rapport ≈ ${(sbpBrute / P.surface).toFixed(2)} à la surface de la parcelle. Estimation non réglementaire (ce n'est pas l'IUS légal)${nivMissing ? " — niveaux manquants pour certains bâtiments" : ""}.</div>`;
+  if (aCheval) html += `<div class="note warn">${aCheval} bâtiment(s) à cheval sur plusieurs parcelles : l'emprise indiquée est celle du bâtiment entier.</div>`;
+  $("bati").innerHTML = html;
+}
+
+/* ---------- Voisins / dépendances ---------- */
+async function loadVoisins(P, outerEsri){
+  const [j, d] = await Promise.all([
+    query(L_PARCELLE, { geometry: outerEsri, geometryType: "esriGeometryPolygon", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "commune,no_comm,no_parcelle,surface,type_propri,egrid", returnGeometry: "false", orderByFields: "no_parcelle" }, "Parcelles contiguës"),
+    query(L_DDP, { geometry: outerEsri, geometryType: "esriGeometryPolygon", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "no_ddp,commune,no_comm,genre,validite,lien_www,SHAPE__Area", returnGeometry: "false" }, "Droits distincts et permanents (DDP)").catch(() => ({ features: [] }))
+  ]);
+  const list = (j.features || []).map(f => f.attributes).filter(a => !(a.no_comm === P.no_comm && a.no_parcelle === P.no_parcelle));
+  const isDep = t => /dépendance/i.test(t || "");
+  list.sort((a, b) => (isDep(b.type_propri) - isDep(a.type_propri)) || (a.no_parcelle - b.no_parcelle));
+  let html = "";
+  if (isDep(P.type_propri)) html += `<div class="note warn">Cette parcelle est elle-même de type « ${esc(P.type_propri)} ».</div>`;
+  const deps = list.filter(a => isDep(a.type_propri));
+  html += `<div class="facts" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+     <div class="fact"><div class="label">Parcelles contiguës</div><div class="v num">${list.length}</div></div>
+     <div class="fact"><div class="label">Dont dépendances</div><div class="v num">${deps.length}</div></div>
+     <div class="fact"><div class="label">DDP concernés</div><div class="v num">${(d.features || []).length}</div></div></div>`;
+  if (list.length){
+    html += `<div class="table-scroll" style="margin-top:16px"><table><thead><tr><th>Parcelle</th><th>Commune</th><th>Type</th><th class="r">Surface</th></tr></thead><tbody>` +
+      list.map(a => `<tr class="clk" data-c="${a.no_comm}" data-p="${a.no_parcelle}" title="Ouvrir cette parcelle"><td class="num">${esc(a.no_parcelle)}</td><td>${esc(a.commune)}</td><td><span class="tag ${isDep(a.type_propri) ? "dep" : ""}">${esc(a.type_propri || "—")}</span></td><td class="r num">${fmtM2(a.surface)}</td></tr>`).join("") +
+      `</tbody></table></div>`;
+  }
+  if ((d.features || []).length){
+    html += `<div class="table-scroll" style="margin-top:16px"><table><thead><tr><th>DDP</th><th>Genre</th><th>Validité</th><th></th></tr></thead><tbody>` +
+      d.features.map(f => f.attributes).map(a => `<tr><td class="num">${esc(a.no_ddp)} <span class="muted">(${esc(a.commune)})</span></td><td>${esc(a.genre || "—")}</td><td>${esc(a.validite || "—")}</td><td>${inlineLink(a.lien_www, "Extrait")}</td></tr>`).join("") +
+      `</tbody></table></div>`;
+  }
+  html += `<div class="note">Le type « dépendance » provient de la mensuration officielle. Le lien juridique exact (quelles parcelles une dépendance dessert, et pour quelle quote-part) figure au registre foncier.</div>`;
+  $("voisins").innerHTML = html;
+  $("voisins").querySelectorAll("tr.clk").forEach(tr => tr.addEventListener("click", () => loadParcel(Number(tr.dataset.c), Number(tr.dataset.p)).catch(e => setStatus(e.message, true))));
+}
+
+/* ---------- Documents ---------- */
+function renderDocs(P, feat){
+  const c = turf.centroid(feat).geometry.coordinates;
+  const geoadmin = `https://map.geo.admin.ch/#/map?lang=fr&center=${c[0]},${c[1]}&crs=EPSG:4326&z=11&bgLayer=ch.swisstopo.swissimage&layers=ch.kantone.cadastralwebmap-farbe`;
+  $("docs").innerHTML = aLink(P.extrait_rdppf_pdf, "Extrait RDPPF (PDF)") + aLink(P.lien_www, "Extrait du registre foncier") + aLink(geoadmin, "Carte geo.admin", "btn ghost");
+  $("maplinks").innerHTML = aLink(geoadmin, "Ouvrir en plein écran", "btn ghost");
+}
+
+/* ---------- Propriétaires ---------- */
+function renderOwners(P){
+  const pub = /^DP|chemin vicinal/i.test(P.type_propri || "");
+  $("owners").innerHTML = `
+    <div class="facts" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="fact"><div class="label">Catégorie</div><div class="v small">${esc(P.type_propri || "—")}</div></div>
+      <div class="fact"><div class="label">Propriété publique</div><div class="v small">${esc(P.propri_publique || (pub ? "Domaine public" : "—"))}</div></div>
+      <div class="fact"><div class="label">Plan RF</div><div class="v small num">${esc(P.plan_rf || "—")}</div></div>
+    </div>
+    <div class="note" style="margin-top:16px">Le nom des propriétaires figure dans l'extrait du registre foncier de l'État de Genève. Ce service est protégé par une vérification anti-robot : il ne peut pas être interrogé automatiquement et doit être consulté manuellement.</div>
+    <div class="links" style="margin-top:14px">${aLink(P.lien_www, "Consulter les propriétaires — parcelle " + P.no_parcelle)}</div>`;
+}
+
+/* ============================================================
+   CARTE
+   ============================================================ */
+function initMap(){
+  map = L.map("map", { zoomControl: true, attributionControl: true, scrollWheelZoom: false });
+  bgOrtho = L.tileLayer("https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg", { maxNativeZoom: 20, maxZoom: 21, attribution: "© swisstopo" });
+  bgPlan  = L.tileLayer("https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg", { maxNativeZoom: 19, maxZoom: 21, attribution: "© swisstopo" });
+  cadLayer = L.tileLayer.wms("https://wms.geo.admin.ch/", { layers: "ch.kantone.cadastralwebmap-farbe", format: "image/png", transparent: true, version: "1.3.0", maxZoom: 21, opacity: 0.9, attribution: "Mensuration officielle" });
+  bgOrtho.addTo(map); cadLayer.addTo(map);
+  map.setView([46.2, 6.14], 12);
+  map.on("click", () => map.scrollWheelZoom.enable());
+  $("bg").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    $("bg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    if (b.dataset.bg === "ortho"){ map.removeLayer(bgPlan); bgOrtho.addTo(map); } else { map.removeLayer(bgOrtho); bgPlan.addTo(map); }
+    bgOrtho.bringToBack(); bgPlan.bringToBack();
+  });
+  $("cadtoggle").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    $("cadtoggle").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    if (b.dataset.cad === "1") cadLayer.addTo(map); else map.removeLayer(cadLayer);
+  });
+}
+function drawMap(feat){
+  if (!map) initMap();
+  setTimeout(() => {
+    map.invalidateSize();
+    if (parcelLayer) map.removeLayer(parcelLayer);
+    parcelLayer = L.geoJSON(feat, { style: { color: "#ff3b1f", weight: 3, fillColor: "#ff3b1f", fillOpacity: 0.08 } }).addTo(map);
+    map.fitBounds(parcelLayer.getBounds(), { padding: [60, 60], maxZoom: 20 });
+  }, 50);
+}
+
+/* ============================================================
+   CHOIX (désambiguïsation)
+   ============================================================ */
+function showChoices(title, items){
+  const box = $("choices");
+  box.innerHTML = `<div class="head label">${esc(title)}</div>`;
+  items.forEach(it => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<span>${esc(it.main)}</span><span class="meta">${esc(it.meta || "")}</span>`;
+    b.addEventListener("click", async () => {
+      if (busy) return; busy = true; $("go").disabled = true;
+      try { await it.go(); } catch(e){ setStatus("Erreur : " + e.message, true); } finally { busy = false; $("go").disabled = false; }
+    });
+    box.appendChild(b);
+  });
+  box.classList.remove("hidden");
+}
+function hideChoices(){ $("choices").classList.add("hidden"); $("choices").innerHTML = ""; }
+
+/* ============================================================
+   DÉMARRAGE
+   ============================================================ */
+$("form").addEventListener("submit", e => { e.preventDefault(); onSearch($("q").value); });
+document.querySelectorAll(".hints code").forEach(c => c.addEventListener("click", () => { $("q").value = c.dataset.q; onSearch(c.dataset.q); }));
+if (typeof turf === "undefined" || typeof L === "undefined") setStatus("Bibliothèques externes non chargées (Leaflet / Turf). Vérifiez la connexion.", true);
+else if (/^#\d{1,2}:\d+$/.test(location.hash)) { $("q").value = location.hash.slice(1); onSearch(location.hash.slice(1)); }
+</script>
+</body>
+</html>
