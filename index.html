@@ -85,6 +85,13 @@ td{padding:10px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 td.r,th.r{text-align:right}
 tr.clk{cursor:pointer}
 tr.clk:hover td{background:var(--paper)}
+.calc{margin-top:18px;border:1px solid var(--ink);padding:18px 22px;background:var(--paper)}
+.calc .lbl{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.calc .row{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 22px;margin-top:10px}
+.calc .ind{font-size:34px;font-weight:300;line-height:1}
+.calc .eq{font-size:20px;font-variant-numeric:tabular-nums}
+.calc .eq b{font-weight:500}
+.calc .why{margin-top:10px;font-size:13px;color:var(--ink-2)}
 .tag{display:inline-block;font-size:11px;letter-spacing:.08em;border:1px solid var(--line-2);border-radius:3px;padding:1px 7px;color:var(--ink-2);white-space:nowrap}
 .tag.dep{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .muted{color:var(--ink-3)}
@@ -606,7 +613,7 @@ function renderPdcom(P){
     html += `<div class="fact wide"><div class="label">Commune</div><div class="v small">${esc(nom)} — absente de la base PDCom locale</div></div><div class="fact"><div class="label">Statut</div><div class="v small">À renseigner</div></div>`;
   }
   html += `</div><div class="links" style="margin-top:14px">${d && d[3] ? aLink(d[3], "Document PDCom") : ""}${aLink(PDCOM_PORTAIL, "Portail PDCom ge.ch", "btn ghost")}</div>`;
-  html += `<div class="note">Le multiplicateur applicable à la parcelle est calculé en section 02 « Potentiel à bâtir ».</div>`;
+  html += `<div id="pdcom-calc"><div class="pending">Calcul du multiplicateur…</div></div>`;
   $("pdcom").innerHTML = html;
 }
 
@@ -753,6 +760,32 @@ function renderPotentiel(P, zonesRes, bati){
   });
 
   if (!zp.length && !zd.length) html += `<div class="note warn">Aucune zone trouvée : potentiel non calculable.</div>`;
+
+  /* ---- Multiplicateur retenu (affiché en tête de section 02 et dans le bloc PDCom) ---- */
+  const comp = [];
+  /* La zone de développement se superpose à la zone primaire : on ne compte jamais deux fois la même surface. */
+  const zdK = zd.filter(r => REGLES.zd[code(r)]);
+  const zdShare = Math.min(1, zdK.reduce((t, r) => t + part(r), 0));
+  zdK.forEach(r => comp.push({ zone: r.a.NOM_ZONE || code(r), s: S * part(r), k: REGLES.zd[code(r)], ref: "LGZD 2A al. 2 (indice minimal, applicable via PLQ)" }));
+  const z5Share = Math.max(0, z5.reduce((t, r) => t + part(r), 0) - zdShare);
+  if (z5Share > 0.005) comp.push({ zone: "Zone 5", s: S * z5Share, k: exclu ? 0.25 : 0.44, ref: exclu ? "LCI 59 al. 1 (secteur sans dérogation)" : "LCI 59 al. 4 — densification accrue PDCom" });
+  const f2 = x => x.toLocaleString("fr-CH", { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+  let calc;
+  if (comp.length){
+    const tot = comp.reduce((t, c) => t + c.s * c.k, 0);
+    const principal = comp.slice().sort((a, b) => b.s - a.s)[0];
+    const formule = comp.map(c => `${fmtM2(c.s)} × ${f2(c.k)}`).join(" + ");
+    const why = comp.map(c => `${esc(c.zone)} : indice ${f2(c.k)} — ${esc(c.ref)}`).join("<br>");
+    const plus = (!exclu && comp.some(c => c.zone === "Zone 5")) ? `<br>Variante THPE : indice 0,48 → ${fmtM2(comp.reduce((t, c) => t + c.s * (c.zone === "Zone 5" ? 0.48 : c.k), 0))}${S > 5000 ? ` · Dérogation exceptionnelle (> 5 000 m²) : 0,55 → ${fmtM2(comp.reduce((t, c) => t + c.s * (c.zone === "Zone 5" ? 0.55 : c.k), 0))}` : ""}` : "";
+    const plqTxt = plq.length ? `<br><strong>PLQ en vigueur : il prévaut sur cet indice.</strong>` : "";
+    calc = `<div class="calc"><div class="lbl">Multiplicateur PDCom appliqué</div>
+      <div class="row"><span class="ind">${f2(principal.k)}</span><span class="eq">${formule} = <b>${fmtM2(tot)}</b> de SBP</span></div>
+      <div class="why">${why}${plus}${plqTxt}</div></div>`;
+  } else {
+    calc = `<div class="calc"><div class="lbl">Multiplicateur PDCom</div><div class="why" style="margin-top:8px">Aucun indice chiffré pour cette zone (${esc(zp.map(r => r.a.NOM_ZONE || code(r)).join(", ") || "zone inconnue")}) : les droits à bâtir y découlent du gabarit ou d'un plan d'affectation.</div></div>`;
+  }
+  html = calc + '<div style="margin-top:22px"></div>' + html;
+  const pc = $("pdcom-calc"); if (pc) pc.innerHTML = calc;
   html += `<div class="note" style="margin-top:20px">SBP = surface brute de plancher hors sol. Les chiffres appliquent la loi à la surface du registre foncier. Ce sont des plafonds théoriques, qui ne tiennent pas compte des distances, des gabarits, de la pleine terre (LCI 59 al. 3bis) ni des servitudes.</div>`;
   box.innerHTML = html;
 }
